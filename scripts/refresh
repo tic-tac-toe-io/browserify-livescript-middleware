@@ -1,0 +1,14 @@
+#!/bin/bash
+#
+
+function refresh_packages {
+	local TOP_DIR="$(cd "$(dirname "$0")"/../ && pwd)"
+	local PACKAGE_JSON_LN="${TOP_DIR}/package.ls"
+	local PACKAGE_JSON="${TOP_DIR}/package.json"
+	local VERSION=$(cat ${TOP_DIR}/CHANGELOG.md | grep '^##\ ' | grep -v Unreleased | awk '{print $2}' | sed 's/\[//g' | sed 's/\]//g' | head -n1)
+	cat ${PACKAGE_JSON_LN} | lsc -cjp | jq ".version=\"${VERSION}\"" > ${PACKAGE_JSON} && \
+		cat ${PACKAGE_JSON} | jq . && \
+		npm i
+}
+
+refresh_packages
