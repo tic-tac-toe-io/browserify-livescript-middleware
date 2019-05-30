@@ -9,7 +9,7 @@
  * Module dependencies.
  */
 require! <[fs url path]>
-require! <[extend livescript mkdirp]>
+require! <[extend livescript mkdirp browserify through2]>
 {minify} = require \uglify-es
 DBG = (require \debug) \browserify-livescript-middleware
 
@@ -45,9 +45,7 @@ class Middleware
     (err, stat) <- fs.stat js-path
     return self.process-next-err \serve-static-javascript, err, next if err?
     mtime = (new Date stat.mtimeMs).toUTCString!
-    if mtime is req.headers['if-modified-since']
-      res.writeHead 304
-      res.end!
+    return res.writeHead 304 .end! if mtime is req.headers['if-modified-since']
     res.statusCode = 200
     res.setHeader 'Last-Modified', mtime
     res.setHeader 'Content-Length', stat.size
@@ -64,7 +62,8 @@ class Middleware
     process-err = (err) -> return next if err.code is \ENOENT then null else err
     {opts} = self = @
     {src, dst} = opts
-    {protocol, originalUrl} = req
+    {protocol, originalUrl, query} = req
+    {forced} = query
     hostname = req.get \host
     full-url = "#{protocol}://#{hostname}#{originalUrl}"
     DBG "process(): req => originalUrl: %s, path: %s, url: %s", originalUrl, req.path, req.url
@@ -77,16 +76,39 @@ class Middleware
     (lerr, ls-stats) <- fs.stat ls-path
     DBG "process(): looking for livescript file stats, err: %s", lerr
     return process-err lerr if lerr?
+    return self.bundle pathname, ls-path, js-path, full-url, req, res, next if forced is \true
     (jerr, js-stats) <- fs.stat js-path
     DBG "process(): looking for javascript file stats, err: %o", jerr
-    return self.compile pathname, ls-path, js-path, full-url, req, res, next if jerr? and jerr.code is \ENOENT
+    return self.bundle pathname, ls-path, js-path, full-url, req, res, next if jerr? and jerr.code is \ENOENT
+    # return self.compile pathname, ls-path, js-path, full-url, req, res, next if jerr? and jerr.code is \ENOENT
     return process-err jerr if jerr?
-    return self.compile pathname, ls-path, js-path, full-url, req, res, next if ls-stats.mtime > js-stats.mtime
-    return self.serve-static-javascript js-path, req, res, next
+    return self.serve-static-javascript js-path, req, res, next unless ls-stats.mtime > js-stats.mtime
+    return self.bundle pathname, ls-path, js-path, full-url, req, res, next
+    # return self.compile pathname, ls-path, js-path, full-url, req, res, next
 
   process-next-err: (func, err, next) ->
     DBG "#{func}(): err => %o", err
     return next err
+
+  bundle: (filename, ls-path, js-path, full-url, req, res, next) ->
+    self = @
+    configs =
+      debug: yes # for source-map support
+      transform: <[browserify-livescript]>
+      extensions: <[.ls]>
+      standalone: path.basename ls-path, ".ls"
+    DBG "bundle(): configs => %o", configs
+    bundled = ''
+    b = browserify ls-path, configs
+    w = fs.createWriteStream js-path
+    w.on \close, ->
+      DBG "bundle(): completed, total %d bytes", bundled.length
+      return self.serve-static-javascript js-path, req, res, next
+    t = through2 (chunk, enc, cb) ->
+      bundled := bundled + chunk
+      this.push chunk
+      return cb!
+    b.bundle! .pipe t .pipe w
 
   compile: (filename, ls-path, js-path, full-url, req, res, next) ->
     {opts} = self = @
@@ -107,10 +129,6 @@ class Middleware
     return self.serve-static-javascript js-path, req, res, next
 
 
-
-/**
- * Module dependencies.
- */
 
 module.exports = exports = (configs = {}) ->
   m = new Middleware configs

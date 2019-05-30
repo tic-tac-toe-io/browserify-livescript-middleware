@@ -31,7 +31,8 @@
     "browserify": "^16.2.2",
     "browserify-livescript": "^0.2.3",
     "uglify-es": "^3.3.9",
-    "fast-json-patch": "^2.0.6"
+    "fast-json-patch": "^2.0.6",
+    "debug": "*"
   },
   "devDependencies": {
     "express": "*"
