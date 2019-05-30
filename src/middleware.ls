@@ -17,13 +17,18 @@ DBG = (require \debug) \browserify-livescript-middleware
 const DEFAULTS =
   src: null
   dst: null
-  livescript:
-    bare: yes
-    map: \embedded
+
+const LIVESCRIPT_COMPILER_OPTIONS =
+  bare: yes
+  map: \embedded
 
 
 MIDDLEWARE_CURRYING = (m, req, res, next) -->
-  return m.process req, res, next
+  return next! unless req.method in <[GET HEAD]>
+  {pathname} = tokens = url.parse req.url
+  return m.process-source pathname, req, res, next if /.js$/.test pathname
+  return m.process-source-map pathname, req, res, next if /.js.map$/.test pathname
+  return next!
 
 
 class Middleware
@@ -34,44 +39,50 @@ class Middleware
     throw new Error "invalid src in middleware options" unless src? and (typeof src) in <[string function]>
     throw new Error "invalid dst in middleware options" unless dst? and (typeof dst) in <[string function]>
 
-  process-source-map: (pathname, res, next) ->
-    return next!
-
-  serve-static-javascript: (js-path, res, next) ->
+  serve-static-javascript: (js-path, req, res, next) ->
+    self = @
     DBG "serve-static-javascript() => js-path: %s", js-path
+    (err, stat) <- fs.stat js-path
+    return self.process-next-err \serve-static-javascript, err, next if err?
+    mtime = (new Date stat.mtimeMs).toUTCString!
+    if mtime is req.headers['if-modified-since']
+      res.writeHead 304
+      res.end!
+    res.statusCode = 200
+    res.setHeader 'Last-Modified', mtime
+    res.setHeader 'Content-Length', stat.size
+    res.setHeader 'Content-Type', 'application/javascript; charset=UTF-8'
+    return (fs.createReadStream js-path).pipe res
+
+  process-source-map: (pathname, req, res, next) ->
     return next!
 
-  process: (req, res, next) ->
+  process-source: (pathname, req, res, next) ->
+    ##
+    # Inspired by https://github.com/ysulyma/livescript-middleware/blob/master/index.ls
+    #
     process-err = (err) -> return next if err.code is \ENOENT then null else err
     {opts} = self = @
     {src, dst} = opts
-    return next! unless req.method in <[GET HEAD]>
     {protocol, originalUrl} = req
-    {pathname} = tokens = url.parse req.url
-    is-js = /.js$/.test pathname
-    is-map = /.js.map$/.test pathname
-    return next! unless is-js or is-map
-    return self.process-source-map pathname, res, next if is-map
     hostname = req.get \host
     full-url = "#{protocol}://#{hostname}#{originalUrl}"
-    DBG "process(): req.originalUrl => %s", originalUrl
-    DBG "process(): req.path => %s", req.path
-    DBG "process(): req.url => %s", req.url
-    DBG "process(): hostname => %s", hostname
+    DBG "process(): req => originalUrl: %s, path: %s, url: %s", originalUrl, req.path, req.url
+    DBG "process(): hostname => %s, pathname => %s", hostname, pathname
     DBG "process(): full-url => %s", full-url
-    DBG "process(): pathname => %s", pathname
     js-path = if \function is typeof dst then dst pathname else path.join dst, pathname
     ls-path = if \function is typeof src then src pathname else path.join src, pathname.replace \.js, \.ls
-    DBG "process(): js-path: %s", js-path
-    DBG "process(): ls-path: %s", ls-path
-    fs.stat ls-path, (err, ls-stats) ->
-      DBG "process(): looking for livescript file stats => %o", err
-      return process-err err if err?
-      fs.stat js-path, (err, js-stats) ->
-        return self.compile pathname, ls-path, js-path, full-url, req, res, next if err? and err.code is \ENOENT
-        return process-err err if err?
-        return self.compile pathname, ls-path, js-path, full-url, req, res, next if ls-stats.mtime > js-stats.mtime
-        return self.serve-static-javascript js-path, res, next
+    DBG "process(): ls-path => %s", ls-path
+    DBG "process(): js-path => %s", js-path
+    (lerr, ls-stats) <- fs.stat ls-path
+    DBG "process(): looking for livescript file stats, err: %s", lerr
+    return process-err lerr if lerr?
+    (jerr, js-stats) <- fs.stat js-path
+    DBG "process(): looking for javascript file stats, err: %o", jerr
+    return self.compile pathname, ls-path, js-path, full-url, req, res, next if jerr? and jerr.code is \ENOENT
+    return process-err jerr if jerr?
+    return self.compile pathname, ls-path, js-path, full-url, req, res, next if ls-stats.mtime > js-stats.mtime
+    return self.serve-static-javascript js-path, req, res, next
 
   process-next-err: (func, err, next) ->
     DBG "#{func}(): err => %o", err
@@ -79,11 +90,10 @@ class Middleware
 
   compile: (filename, ls-path, js-path, full-url, req, res, next) ->
     {opts} = self = @
-    DBG "compile(): ls-path => %s", ls-path
     (read-err, str) <- fs.read-file ls-path, {encoding: \utf8}
     return self.process-next-err \compile, read-err, next if read-err?
     DBG "compile(): livescript file size: %d bytes", str.length
-    configs = extend {}, opts.livescript, {filename}
+    configs = extend {}, LIVESCRIPT_COMPILER_OPTIONS, {filename}
     DBG "compile(): configs => %o", configs
     try
       compiled = livescript.compile str, configs
@@ -94,7 +104,7 @@ class Middleware
     return self.process-next-err \compile, mkdir-err, next if mkdir-err?
     (write-err) <- fs.write-file js-path, compiled.code, {encoding: \utf8}
     return self.process-next-err \compile, write-err, next if write-err?
-    return self.serve-static-javascript js-path, res, next
+    return self.serve-static-javascript js-path, req, res, next
 
 
 
