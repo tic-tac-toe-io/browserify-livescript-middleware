@@ -90,7 +90,35 @@ class Middleware
     DBG "#{func}(): err => %o", err
     return next err
 
-  bundle: (filename, ls-path, js-path, full-url, req, res, next) ->
+  obfuscate: (javascript, pathname, ls-path, js-path, full-url, req, res, next) ->
+    self = @
+    filename = pathname
+    url = "#{filename}.map"
+    {protocol, baseUrl, query} = req
+    hostname = req.get \host
+    root = "#{protocol}://#{hostname}#{baseUrl}"
+    configs =
+      compress: {passes: 2}
+      mangle: true
+      output: {beautify: false, preamble: "/* uglified */"}
+      source-map: {url, root}
+    DBG "obfuscate(): configs => %o", configs
+    result = minify javascript, configs
+    {error} = result
+    return next error if error?
+    DBG "obfuscate(): warnings\n#{result.warnings}" if result.warnings?
+    DBG "obfuscate(): minify #{javascript.length} bytes to #{result.code.length} bytes"
+    (err1) <- fs.write-file js-path, result.code, {encoding: \utf8}
+    return self.process-next-err \obfuscate, err1, next if err1?
+    js-map-path = "#{js-path}.map"
+    DBG "obfuscate(): source-map #{result.map.length} bytes, writing to #{js-map-path}"
+    (err2) <- fs.write-file js-map-path, result.map, {encoding: \utf8}
+    return self.process-next-err \obfuscate, err2, next if err2?
+    return self.serve-static-javascript js-path, req, res, next
+
+  bundle: (pathname, ls-path, js-path, full-url, req, res, next) ->
+    {query} = req
+    {raw} = query
     self = @
     configs =
       debug: yes # for source-map support
@@ -98,23 +126,26 @@ class Middleware
       extensions: <[.ls]>
       standalone: path.basename ls-path, ".ls"
     DBG "bundle(): configs => %o", configs
+    js-raw-path = path.join (path.dirname js-path), "#{path.basename js-path, '.js'}.raw.js"
+    DBG "bundle(): js-raw-path => %s", js-raw-path
     bundled = ''
     b = browserify ls-path, configs
-    w = fs.createWriteStream js-path
+    w = fs.createWriteStream js-raw-path
     w.on \close, ->
       DBG "bundle(): completed, total %d bytes", bundled.length
-      return self.serve-static-javascript js-path, req, res, next
+      return self.obfuscate bundled, pathname, ls-path, js-path, full-url, req, res, next
     t = through2 (chunk, enc, cb) ->
       bundled := bundled + chunk
       this.push chunk
       return cb!
     b.bundle! .pipe t .pipe w
 
-  compile: (filename, ls-path, js-path, full-url, req, res, next) ->
+  compile: (pathname, ls-path, js-path, full-url, req, res, next) ->
     {opts} = self = @
     (read-err, str) <- fs.read-file ls-path, {encoding: \utf8}
     return self.process-next-err \compile, read-err, next if read-err?
     DBG "compile(): livescript file size: %d bytes", str.length
+    filename = pathname
     configs = extend {}, LIVESCRIPT_COMPILER_OPTIONS, {filename}
     DBG "compile(): configs => %o", configs
     try
