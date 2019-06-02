@@ -14,21 +14,178 @@ require! <[extend livescript mkdirp browserify through2]>
 DBG = (require \debug) \browserify-livescript-middleware
 
 
+##
+# javascript codes:
+#
+#   ```
+#   var app = express();
+#   app.enable('trust proxy');
+#   app.use('/js', livescript_middleware({
+#     src: `${__dirname}/scripts`,
+#     dst: '/tmp/work',
+#     compress: true
+#   }));
+#   ```
+#
+# When browser requests the javascript file with following URL:
+#
+#     http://127.0.0.1:6000/js/aaa/bbb/hello.js?forced=true&sourceMap=embedded
+#
+# The fields of `req` in middleware handler are listed as below
+#
+#     - req.originalUrl: `/js/aaa/bbb/hello.js?forced=true&sourceMap=embedded`
+#     - req.baseUrl    : `/js`
+#     - req.url        : `/aaa/bbb/hello.js?forced=true&sourceMap=embedded`
+#     - req.path       : `/aaa/bbb/hello.js`
+#     - req.get('host'): `127.0.0.1:6000`
+#     - req.protocol   : `http`
+#     - req.query      : {forced: 'true', sourceMap: 'embedded'}
+#
+#     - url.parse(req.originalUrl).pathname: `/js/aaa/bbb/hello.js`
+#     - url.parse(req.url).pathname        : `/aaa/bbb/hello.js`
+#
+# And, when browser requests the javascript file behind Nginx (and the `trust proxy` in express-js is enabled),
+# the url and its components are listed as below:
+#
+#     https://test.example.com/js/aaa/bbb/hello.js?forced=true&sourceMap=embedded
+#
+#     - req.originalUrl: (same as above)
+#     - req.baseUrl    : (same as above)
+#     - req.url        : (same as above)
+#     - req.path       : (same as above)
+#     - req.get('host'): `test.example.com`
+#     - req.protocol   : `https`
+#     - req.query      : (same as above)
+#
+#     - url.parse(req.originalUrl).pathname: (same as above)
+#     - url.parse(req.url).pathname        : (same as above)
+#
+#
+#
+
 const DEFAULTS =
   src: null
   dst: null
+
+const ENOENT = \ENOENT
 
 const LIVESCRIPT_COMPILER_OPTIONS =
   bare: yes
   map: \embedded
 
+const BROWSERIFY_OPTIONS =
+  debug: yes                              # for source-map support
+  transform: <[browserify-livescript]>
+  extensions: <[.ls]>
+
+const UGLIFY_OPTIONS =
+  compress: {passes: 2}
+  mangle: true
+  output: {beautify: false, preamble: "/* uglified */"}
+
 
 MIDDLEWARE_CURRYING = (m, req, res, next) -->
   return next! unless req.method in <[GET HEAD]>
   {pathname} = tokens = url.parse req.url
-  return m.process-source pathname, req, res, next if /.js$/.test pathname
+  return m.process-source tokens, req, res, next if /.js$/.test pathname
   return m.process-source-map pathname, req, res, next if /.js.map$/.test pathname
   return next!
+
+
+##
+# Inspired by https://github.com/ysulyma/livescript-middleware/blob/master/index.ls
+#
+class SourceHandler
+  (@m, @tokens, @req, @res, @next) ->
+    {pathname} = tokens
+    @pathname = pathname
+    {protocol, query, baseUrl} = req
+    {forced, raw, sourceMap} = query
+    @hostname = hostname = req.get \host
+    @site = site = "#{protocol}://#{hostname}#{baseUrl}"
+    DBG "source-handler(): site: %s", site
+    DBG "source-handler(): pathname: %s", pathname
+    @embedded-source-map = no
+    @embedded-source-map = yes if sourceMap? and sourceMap is \embedded
+    @forced-compilation = no
+    @forced-compilation = yes if forced? and forced is \true
+    @keeping-raw-source = no
+    @keeping-raw-source = yes if raw? and raw is \true
+    {embedded-source-map, forced-compilation, keeping-raw-source} = @
+    DBG "source-handler(): opts: %o", {embedded-source-map, forced-compilation, keeping-raw-source}
+    @ls-path = ls-path = m.get-livescript-path pathname
+    @js-path = js-path = m.get-javascript-path pathname
+    @module-name = module-name = path.basename ls-path, ".ls"
+    DBG "source-handler(): ls-path: %s", ls-path
+    DBG "source-handler(): js-path: %s", js-path
+    DBG "source-handler(): module-name: %s", module-name
+    @raw-path = raw-path = path.join (path.dirname js-path), "#{path.basename js-path, '.js'}.raw.js"
+    DBG "source-handler(): raw-path: %s", raw-path
+
+  send-error: (funcname, err=null) ->
+    {next, site, pathname} = self = @
+    return next! unless err?
+    console.error "browserify:livescript:#{funcname}(): #{site}#{pathname}, err => #{err}"
+    return next err
+
+  send-script: (filepath) ->
+    {m, req, res, next} = self = @
+    return m.serve-static-javascript filepath, req, res, next
+
+  write-file: (filepath, content, done) ->
+    (mkdirp-err) <- mkdirp path.dirname filepath
+    return done mkdirp-err if mkdirp-err?
+    (write-err) <- fs.writeFile filepath, content, {encoding: \utf8}
+    return done write-err
+
+  process: (@next) ->
+    {ls-path, js-path, m, req, res, forced-compilation} = self = @
+    return self.bundle! if forced-compilation
+    (lerr, ls-stats) <- fs.stat ls-path
+    return self.send-error \process, null if lerr? and lerr.code is ENOENT # livescript source file is missing!!
+    return self.send-error \process, lerr if lerr?
+    DBG "h.process(): ls-stats: %o", ls-stats
+    (jerr, js-stats) <- fs.stat js-path
+    return self.bundle! if jerr? and jerr.code is ENOENT
+    return self.send-error \process, jerr if jerr?
+    DBG "h.process(): js-stats: %o", js-stats
+    return m.serve-static-javascript js-path, req, res, next unless ls-stats.mtime > js-stats.mtime
+    return self.bundle!
+
+  bundle: ->
+    {req, keeping-raw-source, ls-path, raw-path} = self = @
+    standalone = self.module-name
+    opts = extend {}, BROWSERIFY_OPTIONS, {standalone}
+    DBG "bundle(): opts => %o", opts
+    bundled = ''
+    b = browserify ls-path, opts
+    (bundle-err, buffer) <- b.bundle
+    return self.send-error \bundle, bundle-err if bundle-err?
+    javascript = buffer.toString!
+    DBG "bundle(): completed. total %d bytes", javascript.length
+    return self.obfuscate javascript unless keeping-raw-source
+    (write-err) <- self.write-file raw-path, javascript
+    return self.send-error \bundle, write-err if write-err?
+    DBG "bundle(): %s is written.", raw-path
+    return self.obfuscate javascript
+
+  obfuscate: (javascript) ->
+    {site, pathname, js-path, m} = self = @
+    url = "#{pathname}.map"
+    root = site
+    source-map = {url, root}
+    opts = extend {}, UGLIFY_OPTIONS, {source-map}
+    opts.output.preamble = "/* uglified at #{new Date!} */"
+    DBG "obfuscate(): opts => %o", opts
+    result = minify javascript, opts
+    {error, code} = result
+    return self.send-error \obfuscate, error if error?
+    console.error "browserify:livescript:obfuscate(): #{site}#{pathname}, warnings =>\n#{result.warnings}" if result.warnings?
+    DBG "obfuscate(): minify #{javascript.length} bytes to #{code.length} bytes"
+    (write-err) <- self.write-file js-path, code
+    return self.send-error \obfuscate, write-err if write-err?
+    return self.send-script js-path
+
 
 
 class Middleware
@@ -38,6 +195,16 @@ class Middleware
     DBG "opts: %o", @opts
     throw new Error "invalid src in middleware options" unless src? and (typeof src) in <[string function]>
     throw new Error "invalid dst in middleware options" unless dst? and (typeof dst) in <[string function]>
+    @src = src
+    @dst = dst
+
+  get-livescript-path: (pathname) ->
+    {src} = @
+    return if \function is typeof src then src pathname else path.join src, pathname.replace \.js, \.ls
+
+  get-javascript-path: (pathname) ->
+    {dst} = @
+    return if \function is typeof dst then dst pathname else path.join dst, pathname
 
   serve-static-javascript: (js-path, req, res, next) ->
     self = @
@@ -55,90 +222,14 @@ class Middleware
   process-source-map: (pathname, req, res, next) ->
     return next!
 
-  process-source: (pathname, req, res, next) ->
-    ##
-    # Inspired by https://github.com/ysulyma/livescript-middleware/blob/master/index.ls
-    #
-    process-err = (err) -> return next if err.code is \ENOENT then null else err
-    {opts} = self = @
-    {src, dst} = opts
-    {protocol, originalUrl, query} = req
-    {forced} = query
-    hostname = req.get \host
-    full-url = "#{protocol}://#{hostname}#{originalUrl}"
-    DBG "process(): req => originalUrl: %s, path: %s, url: %s", originalUrl, req.path, req.url
-    DBG "process(): hostname => %s, pathname => %s", hostname, pathname
-    DBG "process(): full-url => %s", full-url
-    js-path = if \function is typeof dst then dst pathname else path.join dst, pathname
-    ls-path = if \function is typeof src then src pathname else path.join src, pathname.replace \.js, \.ls
-    DBG "process(): ls-path => %s", ls-path
-    DBG "process(): js-path => %s", js-path
-    (lerr, ls-stats) <- fs.stat ls-path
-    DBG "process(): looking for livescript file stats, err: %s", lerr
-    return process-err lerr if lerr?
-    return self.bundle pathname, ls-path, js-path, full-url, req, res, next if forced is \true
-    (jerr, js-stats) <- fs.stat js-path
-    DBG "process(): looking for javascript file stats, err: %o", jerr
-    return self.bundle pathname, ls-path, js-path, full-url, req, res, next if jerr? and jerr.code is \ENOENT
-    # return self.compile pathname, ls-path, js-path, full-url, req, res, next if jerr? and jerr.code is \ENOENT
-    return process-err jerr if jerr?
-    return self.serve-static-javascript js-path, req, res, next unless ls-stats.mtime > js-stats.mtime
-    return self.bundle pathname, ls-path, js-path, full-url, req, res, next
-    # return self.compile pathname, ls-path, js-path, full-url, req, res, next
+  process-source: (tokens, req, res, next) ->
+    m = @
+    h = new SourceHandler m, tokens, req, res
+    return h.process next
 
   process-next-err: (func, err, next) ->
     DBG "#{func}(): err => %o", err
     return next err
-
-  obfuscate: (javascript, pathname, ls-path, js-path, full-url, req, res, next) ->
-    self = @
-    filename = pathname
-    url = "#{filename}.map"
-    {protocol, baseUrl, query} = req
-    hostname = req.get \host
-    root = "#{protocol}://#{hostname}#{baseUrl}"
-    configs =
-      compress: {passes: 2}
-      mangle: true
-      output: {beautify: false, preamble: "/* uglified */"}
-      source-map: {url, root}
-    DBG "obfuscate(): configs => %o", configs
-    result = minify javascript, configs
-    {error} = result
-    return next error if error?
-    DBG "obfuscate(): warnings\n#{result.warnings}" if result.warnings?
-    DBG "obfuscate(): minify #{javascript.length} bytes to #{result.code.length} bytes"
-    (err1) <- fs.write-file js-path, result.code, {encoding: \utf8}
-    return self.process-next-err \obfuscate, err1, next if err1?
-    js-map-path = "#{js-path}.map"
-    DBG "obfuscate(): source-map #{result.map.length} bytes, writing to #{js-map-path}"
-    (err2) <- fs.write-file js-map-path, result.map, {encoding: \utf8}
-    return self.process-next-err \obfuscate, err2, next if err2?
-    return self.serve-static-javascript js-path, req, res, next
-
-  bundle: (pathname, ls-path, js-path, full-url, req, res, next) ->
-    {query} = req
-    {raw} = query
-    self = @
-    configs =
-      debug: yes # for source-map support
-      transform: <[browserify-livescript]>
-      extensions: <[.ls]>
-      standalone: path.basename ls-path, ".ls"
-    DBG "bundle(): configs => %o", configs
-    js-raw-path = path.join (path.dirname js-path), "#{path.basename js-path, '.js'}.raw.js"
-    DBG "bundle(): js-raw-path => %s", js-raw-path
-    bundled = ''
-    b = browserify ls-path, configs
-    w = fs.createWriteStream js-raw-path
-    w.on \close, ->
-      DBG "bundle(): completed, total %d bytes", bundled.length
-      return self.obfuscate bundled, pathname, ls-path, js-path, full-url, req, res, next
-    t = through2 (chunk, enc, cb) ->
-      bundled := bundled + chunk
-      this.push chunk
-      return cb!
-    b.bundle! .pipe t .pipe w
 
   compile: (pathname, ls-path, js-path, full-url, req, res, next) ->
     {opts} = self = @
