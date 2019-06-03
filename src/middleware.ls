@@ -88,7 +88,7 @@ MIDDLEWARE_CURRYING = (m, req, res, next) -->
   return next! unless req.method in <[GET HEAD]>
   {pathname} = tokens = url.parse req.url
   return m.process-source tokens, req, res, next if /.js$/.test pathname
-  return m.process-source-map pathname, req, res, next if /.js.map$/.test pathname
+  return m.serve-source-map-file pathname, req, res, next if /.js.map$/.test pathname
   return next!
 
 
@@ -120,7 +120,8 @@ class SourceHandler
     DBG "source-handler(): js-path: %s", js-path
     DBG "source-handler(): module-name: %s", module-name
     @raw-path = raw-path = path.join (path.dirname js-path), "#{path.basename js-path, '.js'}.raw.js"
-    DBG "source-handler(): raw-path: %s", raw-path
+    @map-path = map-path = "#{js-path}.map"
+    DBG "source-handler(): map-path: %s", map-path
 
   send-error: (funcname, err=null) ->
     {next, site, pathname} = self = @
@@ -130,7 +131,7 @@ class SourceHandler
 
   send-script: (filepath) ->
     {m, req, res, next} = self = @
-    return m.serve-static-javascript filepath, req, res, next
+    return m.serve-javascript-file filepath, req, res, next
 
   write-file: (filepath, content, done) ->
     (mkdirp-err) <- mkdirp path.dirname filepath
@@ -149,7 +150,7 @@ class SourceHandler
     return self.bundle! if jerr? and jerr.code is ENOENT
     return self.send-error \process, jerr if jerr?
     DBG "h.process(): js-stats: %o", js-stats
-    return m.serve-static-javascript js-path, req, res, next unless ls-stats.mtime > js-stats.mtime
+    return m.serve-javascript-file js-path, req, res, next unless ls-stats.mtime > js-stats.mtime
     return self.bundle!
 
   bundle: ->
@@ -170,20 +171,24 @@ class SourceHandler
     return self.obfuscate javascript
 
   obfuscate: (javascript) ->
-    {site, pathname, js-path, m} = self = @
-    url = "#{pathname}.map"
+    {site, pathname, js-path, map-path, m, req} = self = @
+    filename = \bundle.js
+    url = "#{req.baseUrl}#{pathname}.map"
     root = site
-    source-map = {url, root}
+    source-map = {filename, url, root}
+    # source-map = \inline
     opts = extend {}, UGLIFY_OPTIONS, {source-map}
-    opts.output.preamble = "/* uglified at #{new Date!} */"
+    opts.output.preamble = "/* minified at #{new Date!.toISOString!} */"
     DBG "obfuscate(): opts => %o", opts
     result = minify javascript, opts
     {error, code} = result
     return self.send-error \obfuscate, error if error?
     console.error "browserify:livescript:obfuscate(): #{site}#{pathname}, warnings =>\n#{result.warnings}" if result.warnings?
-    DBG "obfuscate(): minify #{javascript.length} bytes to #{code.length} bytes"
-    (write-err) <- self.write-file js-path, code
-    return self.send-error \obfuscate, write-err if write-err?
+    DBG "obfuscate(): minify #{javascript.length} bytes to #{code.length} bytes, with source map #{result['map'].length} bytes"
+    (write-src-err) <- self.write-file js-path, result['code']
+    return self.send-error \obfuscate, write-src-err if write-src-err?
+    (write-map-err) <- self.write-file map-path, result['map']
+    return self.send-error \obfuscate, write-map-err if write-map-err?
     return self.send-script js-path
 
 
@@ -206,21 +211,33 @@ class Middleware
     {dst} = @
     return if \function is typeof dst then dst pathname else path.join dst, pathname
 
-  serve-static-javascript: (js-path, req, res, next) ->
+  serve-javascript-file: (js-path, req, res, next) ->
     self = @
-    DBG "serve-static-javascript() => js-path: %s", js-path
+    DBG "serve-javascript-file() => js-path: %s", js-path
     (err, stat) <- fs.stat js-path
-    return self.process-next-err \serve-static-javascript, err, next if err?
+    return self.process-next-err \serve-javascript-file, err, next if err?
     mtime = (new Date stat.mtimeMs).toUTCString!
-    return res.writeHead 304 .end! if mtime is req.headers['if-modified-since']
+    return res.writeHead 304 if mtime is req.headers['if-modified-since']
     res.statusCode = 200
     res.setHeader 'Last-Modified', mtime
     res.setHeader 'Content-Length', stat.size
     res.setHeader 'Content-Type', 'application/javascript; charset=UTF-8'
     return (fs.createReadStream js-path).pipe res
 
-  process-source-map: (pathname, req, res, next) ->
-    return next!
+  serve-source-map-file: (pathname, req, res, next) ->
+    self = @
+    map-path = self.get-javascript-path pathname
+    DBG "process-source-map(): originalUrl: %s", req.originalUrl
+    DBG "process-source-map(): map-path: %s", map-path
+    (err, stat) <- fs.stat map-path
+    return self.process-next-err \process-source-map, err, next if err?
+    mtime = (new Date stat.mtimeMs).toUTCString!
+    return res.writeHead 304 if mtime is req.headers['if-modified-since']
+    res.statusCode = 200
+    res.setHeader 'Last-Modified', mtime
+    res.setHeader 'Content-Length', stat.size
+    res.setHeader 'Content-Type', 'application/octet-stream'
+    return (fs.createReadStream map-path).pipe res
 
   process-source: (tokens, req, res, next) ->
     m = @
@@ -248,7 +265,7 @@ class Middleware
     return self.process-next-err \compile, mkdir-err, next if mkdir-err?
     (write-err) <- fs.write-file js-path, compiled.code, {encoding: \utf8}
     return self.process-next-err \compile, write-err, next if write-err?
-    return self.serve-static-javascript js-path, req, res, next
+    return self.serve-javascript-file js-path, req, res, next
 
 
 

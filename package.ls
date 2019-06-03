@@ -46,7 +46,9 @@ repository:
 dependencies:
   mkdirp: \^0.5.1
   extend: \^3.0.2
-  livescript: \>=1.6.0
+  livescript: \ischenkodv/LiveScript
+  \source-map : \=0.6.1
+  \source-map-support : \=0.5.11
   browserify : \^16.2.2
   \browserify-livescript : \^0.2.3
   \uglify-es : \^3.3.9
