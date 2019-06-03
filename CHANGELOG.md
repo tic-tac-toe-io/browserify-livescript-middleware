@@ -4,6 +4,7 @@
 ### Changed
 - refactorying codes with `source-handler` class to make codes more clean
 - change livescript to `ischenkodv/LiveScript` to use its 1.6.1 version with source-map 0.6.1
+- extract source-map from bunelded javascript with module `exorcist`, and push this map to uglify-es
 
 ### Added
 - serve source map file download

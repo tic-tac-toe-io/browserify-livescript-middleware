@@ -9,10 +9,9 @@
  * Module dependencies.
  */
 require! <[fs url path]>
-require! <[extend livescript mkdirp browserify through2]>
+require! <[extend livescript mkdirp browserify exorcist through2]>
 {minify} = require \uglify-es
 DBG = (require \debug) \browserify-livescript-middleware
-
 
 ##
 # javascript codes:
@@ -158,33 +157,52 @@ class SourceHandler
     standalone = self.module-name
     opts = extend {}, BROWSERIFY_OPTIONS, {standalone}
     DBG "bundle(): opts => %o", opts
+    filepath = "#{raw-path}.map"
+    (mkdirp-err) <- mkdirp path.dirname filepath
+    return self.send-error \bundle, mkdirp-err if mkdirp-err?
     bundled = ''
     b = browserify ls-path, opts
-    (bundle-err, buffer) <- b.bundle
-    return self.send-error \bundle, bundle-err if bundle-err?
-    javascript = buffer.toString!
-    DBG "bundle(): completed. total %d bytes", javascript.length
-    return self.obfuscate javascript unless keeping-raw-source
-    (write-err) <- self.write-file raw-path, javascript
-    return self.send-error \bundle, write-err if write-err?
-    DBG "bundle(): %s is written.", raw-path
-    return self.obfuscate javascript
+    w = fs.createWriteStream raw-path
+    bundled = ''
+    mapped = ''
+    w.on \close, ->
+      DBG "bundle(): completed. total %d bytes (map %d bytes)", bundled.length, mapped.length
+      (write-err) <- self.write-file filepath, mapped
+      return self.send-error \bundle, write-err if write-err?
+      DBG "bundle(): %s written", filepath
+      return self.obfuscate bundled, mapped
+    t = through2 (chunk, enc, cb) ->
+      bundled := bundled + chunk
+      this.push chunk
+      return cb!
+    n = through2 (chunk, enc, cb) ->
+      mapped := mapped + chunk
+      this.push chunk
+      return cb!
+    m = exorcist n, 'bundle.x.js'
+    x = b.bundle!
+    x.on \error, (bundle-err) -> return self.send-error \bundle, bundle-err if bundle-err?
+    x.pipe m
+      .pipe t
+      .pipe w
 
-  obfuscate: (javascript) ->
+  obfuscate: (bundled, bundle-mapped) ->
     {site, pathname, js-path, map-path, m, req} = self = @
     filename = \bundle.js
     url = "#{req.baseUrl}#{pathname}.map"
-    root = site
-    source-map = {filename, url, root}
+    # root = site
+    # source-map = {filename, url, root}
     # source-map = \inline
+    content = bundle-mapped
+    source-map = {content, url}
     opts = extend {}, UGLIFY_OPTIONS, {source-map}
     opts.output.preamble = "/* minified at #{new Date!.toISOString!} */"
     DBG "obfuscate(): opts => %o", opts
-    result = minify javascript, opts
+    result = minify bundled, opts
     {error, code} = result
     return self.send-error \obfuscate, error if error?
     console.error "browserify:livescript:obfuscate(): #{site}#{pathname}, warnings =>\n#{result.warnings}" if result.warnings?
-    DBG "obfuscate(): minify #{javascript.length} bytes to #{code.length} bytes, with source map #{result['map'].length} bytes"
+    DBG "obfuscate(): minify #{bundled.length} bytes to #{code.length} bytes, with source map #{result['map'].length} bytes"
     (write-src-err) <- self.write-file js-path, result['code']
     return self.send-error \obfuscate, write-src-err if write-src-err?
     (write-map-err) <- self.write-file map-path, result['map']
