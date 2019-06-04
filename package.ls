@@ -27,15 +27,10 @@ description: "Connect middleware for LiveScript with Browserify support"
 
 keywords: <[livescript middleware connect browserify uglify-es]>
 
-author: "Yuri Sulyma <yuri.sulyma@gmail.com>"
+author: "yagamy <yagamy@gmail.com> (https://github.com/yagamy4680)"
 
-contributors:
-  * name: \yagamy
-    email: \yagamy@gmail.com
-    url: \https://github.com/yagamy4680
-  ...
-
-bugs: \https://github.com/tic-tac-toe-io/browserify-livescript-middleware/issues
+bugs:
+  url: \https://github.com/tic-tac-toe-io/browserify-livescript-middleware/issues
 
 license: \MIT
 
@@ -46,7 +41,7 @@ repository:
 dependencies:
   mkdirp: \^0.5.1
   extend: \^3.0.2
-  livescript: \ischenkodv/LiveScript
+  livescript: \github:ischenkodv/LiveScript
   \source-map : \=0.6.1
   \source-map-support : \=0.5.11
   browserify : \^16.2.2
@@ -66,3 +61,10 @@ files: <[
   /src/**/*
   /examples/**/*
   ]>
+
+homepage: \https://github.com/tic-tac-toe-io/browserify-livescript-middleware#readme
+
+directories:
+  doc: \docs
+  example: \examples
+  test: \tests

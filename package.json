@@ -1,6 +1,6 @@
 {
   "name": "@tic-tac-toe/browserify-livescript-middleware",
-  "version": "1.2.0",
+  "version": "x.x.x",
   "main": "index.js",
   "description": "Connect middleware for LiveScript with Browserify support",
   "keywords": [
@@ -10,10 +10,7 @@
     "browserify",
     "uglify-es"
   ],
-  "author": "Yuri Sulyma <yuri.sulyma@gmail.com>",
-  "contributors": [
-    "yagamy <yagamy@gmail.com> (https://github.com/yagamy4680)"
-  ],
+  "author": "yagamy <yagamy@gmail.com> (https://github.com/yagamy4680)",
   "bugs": {
     "url": "https://github.com/tic-tac-toe-io/browserify-livescript-middleware/issues"
   },
@@ -48,8 +45,5 @@
     "doc": "docs",
     "example": "examples",
     "test": "tests"
-  },
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
   }
 }
