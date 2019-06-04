@@ -17,7 +17,7 @@ $ PORT=8000 DEBUG=browserify-livescript-middleware node ./node_modules/@tic-tac-
 
 Then, open chrome with devtool to visit http://localhost:7000/view/example1, and see its source tab:
 
-![](chrome_devtool_source_map.png)
+![](./docs/chrome_devtool_source_map.png)
 
 
 ## Usage
