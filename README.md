@@ -41,9 +41,9 @@ app.listen(8000);
 ```
 
 
-## Why?
+## livescript-middleware? Why?
 
-[Why](./docs/WHY.md) do we create this module!?
+This project was originally forked from [livescript-middleware](https://www.npmjs.com/package/livescript-middleware). But, after making some changes, we found there are too many changes to be merged to original module. Then, we decided to create a new middleware to meet all of our requirements. Please see [Why](./docs/WHY.md) for more rationales.
 
 
 ## Todos
