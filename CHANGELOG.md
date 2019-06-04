@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+
+## [1.2.0] - 2019-06-04
 ### Changed
 - refactorying codes with `source-handler` class to make codes more clean
 - change livescript to `ischenkodv/LiveScript` to use its 1.6.1 version with source-map 0.6.1
@@ -9,6 +11,7 @@
 ### Added
 - serve source map file download
 - add html entry page for `/tests/express.js` test
+- add `examples/express.js`
 
 ## [1.1.3] - 2019-05-28
 ### Changed

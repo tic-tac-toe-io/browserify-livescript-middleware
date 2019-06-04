@@ -14,7 +14,7 @@ helpers = require '../common/helpers'
 log = require '../common/log'
 ```
 
-With bundler and livescript compiler, it's possible to combine javascript sources from `node_modules` directory that are installed by `npm` or `bower`, and also possible to combine livescript sources from the designated directories.
+With bundler and livescript transpiler, it's possible to combine javascript sources from `node_modules` directory that are installed by `npm` or `bower`, and also possible to combine livescript sources from the designated directories.
 
 In order to align with mobile app development (w/ [Apache Cordova](https://cordova.apache.org/)) and embedded linux app development (minified and standalone javascript application on top of nodejs), we select [browserify](https://github.com/browserify/browserify) as the bundler.
 
@@ -25,7 +25,7 @@ It's 2019, and I want source code map support in this middleware.
 
 
 
-### 3. Configurable Bundling and Compilation
+### 3. Configurable Source Transform and Bundler
 
 [livescript-middleware](https://www.npmjs.com/package/livescript-middleware) uses `express.static` to serve the generated javascript files, but I want to serve these generated javascript files with cache behaviors configurable from HTTP query strings.
 

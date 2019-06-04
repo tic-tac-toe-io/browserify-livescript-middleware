@@ -6,6 +6,20 @@ The middleware to process [livescript](http://livescript.net/) files into a sing
 
 Check out **[livescript.net](http://livescript.net)** for more information, examples, usage, and a language reference.
 
+
+## Try
+
+```text
+$ npm install @tic-tac-toe/browserify-livescript-middleware
+$ npm install express
+$ PORT=8000 DEBUG=browserify-livescript-middleware node ./node_modules/@tic-tac-toe/browserify-livescript-middleware/examples/express.js
+```
+
+Then, open chrome with devtool to visit http://localhost:7000/view/example1, and see its source tab:
+
+![](chrome_devtool_source_map.png)
+
+
 ## Usage
 
 The middleware serves Livescript compilation, javascript bundling/compression, and static javascript files, so its usage is very simple. Just create a middleware instance with the given options:

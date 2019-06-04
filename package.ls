@@ -64,4 +64,5 @@ optionalDependencies: {}
 
 files: <[
   /src/**/*
+  /examples/**/*
   ]>
