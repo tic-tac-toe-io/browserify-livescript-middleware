@@ -11,7 +11,8 @@
 require! <[fs url path]>
 require! <[extend livescript mkdirp browserify exorcist through2]>
 {minify} = require \uglify-es
-DBG = (require \debug) \browserify-livescript-middleware
+DBG = (require \debug) \brls:middleware
+sendfile = require \./sendfile
 
 ##
 # javascript codes:
@@ -59,8 +60,6 @@ DBG = (require \debug) \browserify-livescript-middleware
 #     - url.parse(req.originalUrl).pathname: (same as above)
 #     - url.parse(req.url).pathname        : (same as above)
 #
-#
-#
 
 const DEFAULTS =
   src: null
@@ -83,11 +82,17 @@ const UGLIFY_OPTIONS =
   output: {beautify: false, preamble: "/* uglified */"}
 
 
+SEND_JS = (filepath, req, res, next) ->
+  return sendfile filepath, {mime: 'application/javascript; charset=UTF-8'}, req, res, next
+
+SEND_MAP = (filepath, req, res, next) ->
+  return sendfile filepath, {mime: 'application/octet-stream'}, req, res, next
+
 MIDDLEWARE_CURRYING = (m, req, res, next) -->
   return next! unless req.method in <[GET HEAD]>
   {pathname} = tokens = url.parse req.url
+  return SEND_MAP (m.get-javascript-path pathname), req, res, next if /.js.map$/.test pathname
   return m.process-source tokens, req, res, next if /.js$/.test pathname
-  return m.serve-source-map-file pathname, req, res, next if /.js.map$/.test pathname
   return next!
 
 
@@ -130,7 +135,7 @@ class SourceHandler
 
   send-script: (filepath) ->
     {m, req, res, next} = self = @
-    return m.serve-javascript-file filepath, req, res, next
+    return SEND_JS filepath, req, res, next
 
   write-file: (filepath, content, done) ->
     (mkdirp-err) <- mkdirp path.dirname filepath
@@ -149,7 +154,7 @@ class SourceHandler
     return self.bundle! if jerr? and jerr.code is ENOENT
     return self.send-error \process, jerr if jerr?
     DBG "h.process(): js-stats: %o", js-stats
-    return m.serve-javascript-file js-path, req, res, next unless ls-stats.mtime > js-stats.mtime
+    return SEND_JS js-path, req, res, next unless ls-stats.mtime > js-stats.mtime
     return self.bundle!
 
   bundle: ->
@@ -226,43 +231,6 @@ class Middleware
     {dst} = @
     return if \function is typeof dst then dst pathname else path.join dst, pathname
 
-  response-no-change: (res) ->
-    res.writeHead 304
-    res.end!
-    DBG "response-no-change(): no changes."
-    return
-
-  serve-javascript-file: (js-path, req, res, next) ->
-    self = @
-    DBG "serve-javascript-file() => js-path: %s", js-path
-    (err, stat) <- fs.stat js-path
-    return self.process-next-err \serve-javascript-file, err, next if err?
-    DBG "serve-javascript-file() => stat: %o", stat
-    mtime = (new Date stat.mtimeMs).toUTCString!
-    return self.response-no-change res if mtime is req.headers['if-modified-since']
-    mime = 'application/javascript; charset=UTF-8'
-    res.statusCode = 200
-    res.setHeader 'Last-Modified', mtime
-    res.setHeader 'Content-Length', stat.size
-    res.setHeader 'Content-Type', mime
-    DBG "serve-javascript-file() => sending file with #{mime}"
-    return (fs.createReadStream js-path).pipe res
-
-  serve-source-map-file: (pathname, req, res, next) ->
-    self = @
-    map-path = self.get-javascript-path pathname
-    DBG "process-source-map(): originalUrl: %s", req.originalUrl
-    DBG "process-source-map(): map-path: %s", map-path
-    (err, stat) <- fs.stat map-path
-    return self.process-next-err \process-source-map, err, next if err?
-    mtime = (new Date stat.mtimeMs).toUTCString!
-    return res.writeHead 304 if mtime is req.headers['if-modified-since']
-    res.statusCode = 200
-    res.setHeader 'Last-Modified', mtime
-    res.setHeader 'Content-Length', stat.size
-    res.setHeader 'Content-Type', 'application/octet-stream'
-    return (fs.createReadStream map-path).pipe res
-
   process-source: (tokens, req, res, next) ->
     m = @
     h = new SourceHandler m, tokens, req, res
@@ -289,7 +257,7 @@ class Middleware
     return self.process-next-err \compile, mkdir-err, next if mkdir-err?
     (write-err) <- fs.write-file js-path, compiled.code, {encoding: \utf8}
     return self.process-next-err \compile, write-err, next if write-err?
-    return self.serve-javascript-file js-path, req, res, next
+    return SEND_JS js-path, req, res, next
 
 
 

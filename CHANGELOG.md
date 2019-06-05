@@ -3,6 +3,7 @@
 ## [Unreleased]
 ### Changed
 - improve verbose messages
+- move the logics of serving static files to `/src/sendfile.ls`
 
 ### Fixed
 - fix chrome browser to wait javascript when no changes, because of missing `res.end()`
