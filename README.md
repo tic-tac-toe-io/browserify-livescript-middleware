@@ -53,3 +53,4 @@ This project was originally forked from [livescript-middleware](https://www.npmj
 - [ ] write a simple `examples/express/index.js` with ES6 to test/demonstrate this middleware
 - [ ] test `examples/koa/index.js` with [koa](https://github.com/koajs/koa)
 - [x] use a forked livescript (https://github.com/ischenkodv/LiveScript/commit/7ae73cb263cb55ae32e44fddae81510aa4401679) with correct source map support (upgrade `source-map-support` from 0.3.2 to 0.5.11)
+- [ ] move `src/liveify` to a standalone transform module, similar to [liveify](https://www.npmjs.com/package/liveify), maybe `liveify-next`

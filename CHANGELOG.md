@@ -1,9 +1,15 @@
 # Changelog
 
 ## [Unreleased]
+
+## [1.3.0] - 2019-06-06
 ### Changed
 - improve verbose messages
 - move the logics of serving static files to `/src/sendfile.ls`
+- implement livescript transform plugin for browserify in `/src/liveify.ls`
+
+### Removed
+- `browserify-livescript` is removed
 
 ### Fixed
 - fix chrome browser to wait javascript when no changes, because of missing `res.end()`

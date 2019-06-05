@@ -45,11 +45,12 @@ dependencies:
   \source-map : \=0.6.1
   \source-map-support : \=0.5.11
   browserify : \^16.2.2
-  \browserify-livescript : \^0.2.3
   \exorcist : \*
   \uglify-es : \^3.3.9
   \fast-json-patch : \^2.0.6
   \debug : \*
+  through2 : \^2.0.0
+  \convert-source-map : \^1.3.0
 
 
 devDependencies:

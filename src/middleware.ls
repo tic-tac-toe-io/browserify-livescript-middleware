@@ -13,6 +13,7 @@ require! <[extend livescript mkdirp browserify exorcist through2]>
 {minify} = require \uglify-es
 DBG = (require \debug) \brls:middleware
 sendfile = require \./sendfile
+LIVEIFY = require \./liveify
 
 ##
 # javascript codes:
@@ -73,7 +74,6 @@ const LIVESCRIPT_COMPILER_OPTIONS =
 
 const BROWSERIFY_OPTIONS =
   debug: yes                              # for source-map support
-  transform: <[browserify-livescript]>
   extensions: <[.ls]>
 
 const UGLIFY_OPTIONS =
@@ -158,9 +158,10 @@ class SourceHandler
     return self.bundle!
 
   bundle: ->
-    {req, keeping-raw-source, ls-path, raw-path} = self = @
+    {m, req, keeping-raw-source, ls-path, raw-path} = self = @
     standalone = self.module-name
-    opts = extend {}, BROWSERIFY_OPTIONS, {standalone}
+    transform = [m.liveify]
+    opts = extend {}, BROWSERIFY_OPTIONS, {standalone, transform}
     DBG "bundle(): opts => %o", opts
     filepath = "#{raw-path}.map"
     (mkdirp-err) <- mkdirp path.dirname filepath
@@ -222,6 +223,7 @@ class Middleware
     throw new Error "invalid dst in middleware options" unless dst? and (typeof dst) in <[string function]>
     @src = src
     @dst = dst
+    @liveify = if \string is typeof src then LIVEIFY src else LIVEIFY ''
 
   get-livescript-path: (pathname) ->
     {src} = @
