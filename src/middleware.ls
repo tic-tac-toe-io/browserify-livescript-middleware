@@ -190,14 +190,11 @@ class SourceHandler
     {site, pathname, js-path, map-path, m, req} = self = @
     filename = \bundle.js
     url = "#{req.baseUrl}#{pathname}.map"
-    # root = site
-    # source-map = {filename, url, root}
-    # source-map = \inline
-    content = bundle-mapped
-    source-map = {content, url}
+    source-map = {url}
     opts = extend {}, UGLIFY_OPTIONS, {source-map}
     opts.output.preamble = "/* minified at #{new Date!.toISOString!} */"
     DBG "obfuscate(): opts => %o", opts
+    opts.source-map.content = bundle-mapped
     result = minify bundled, opts
     {error, code} = result
     return self.send-error \obfuscate, error if error?
@@ -229,17 +226,26 @@ class Middleware
     {dst} = @
     return if \function is typeof dst then dst pathname else path.join dst, pathname
 
+  response-no-change: (res) ->
+    res.writeHead 304
+    res.end!
+    DBG "response-no-change(): no changes."
+    return
+
   serve-javascript-file: (js-path, req, res, next) ->
     self = @
     DBG "serve-javascript-file() => js-path: %s", js-path
     (err, stat) <- fs.stat js-path
     return self.process-next-err \serve-javascript-file, err, next if err?
+    DBG "serve-javascript-file() => stat: %o", stat
     mtime = (new Date stat.mtimeMs).toUTCString!
-    return res.writeHead 304 if mtime is req.headers['if-modified-since']
+    return self.response-no-change res if mtime is req.headers['if-modified-since']
+    mime = 'application/javascript; charset=UTF-8'
     res.statusCode = 200
     res.setHeader 'Last-Modified', mtime
     res.setHeader 'Content-Length', stat.size
-    res.setHeader 'Content-Type', 'application/javascript; charset=UTF-8'
+    res.setHeader 'Content-Type', mime
+    DBG "serve-javascript-file() => sending file with #{mime}"
     return (fs.createReadStream js-path).pipe res
 
   serve-source-map-file: (pathname, req, res, next) ->

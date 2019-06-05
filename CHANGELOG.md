@@ -1,6 +1,11 @@
 # Changelog
 
 ## [Unreleased]
+### Changed
+- improve verbose messages
+
+### Fixed
+- fix chrome browser to wait javascript when no changes, because of missing `res.end()`
 
 ## [1.2.0] - 2019-06-04
 ### Changed
