@@ -1,6 +1,13 @@
 # Changelog
 
-## [Unreleased]
+All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
+
+### 1.3.1 (2020-04-26)
+
+
+### Bug Fixes
+
+* **security:** apply module update because of security advistory from github [#1](https://github.com/tic-tac-toe-io/browserify-livescript-middleware/issues/1) ([3755415](https://github.com/tic-tac-toe-io/browserify-livescript-middleware/commit/37554155817c7c54535e5b0166ef30467a12d96c))
 
 ## [1.3.0] - 2019-06-06
 ### Changed
