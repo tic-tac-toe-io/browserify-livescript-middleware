@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.3.2](https://github.com/tic-tac-toe-io/browserify-livescript-middleware/compare/v1.3.1...v1.3.2) (2020-04-26)
+
+
+### Bug Fixes
+
+* **npm:** update node module dependencies to latest ([81d12d5](https://github.com/tic-tac-toe-io/browserify-livescript-middleware/commit/81d12d58bad3d7f066ddd857151b63e0720a7e4d))
+
 ### 1.3.1 (2020-04-26)
 
 
