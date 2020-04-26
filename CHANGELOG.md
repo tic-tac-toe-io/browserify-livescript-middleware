@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.3.3](https://github.com/tic-tac-toe-io/browserify-livescript-middleware/compare/v1.3.2...v1.3.3) (2020-04-26)
+
+
+### Bug Fixes
+
+* **npm:** lock mkdirp to 0.5.5 for backward compatibility, and use package.json as single source of package manifest to phase out package.ls ([885b883](https://github.com/tic-tac-toe-io/browserify-livescript-middleware/commit/885b88329d941699e7a396b4d30dfe7e15f1ff1a))
+
 ### [1.3.2](https://github.com/tic-tac-toe-io/browserify-livescript-middleware/compare/v1.3.1...v1.3.2) (2020-04-26)
 
 
